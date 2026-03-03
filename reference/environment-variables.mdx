@@ -17,17 +17,39 @@ Zapmail requires the following environment variables to be set for proper operat
 
 ## Database configuration
 
+### Backend database connection
+
 <ParamField path="SUPABASE_CONN_STRING" type="string" required>
-  PostgreSQL connection string for the Supabase database.
+  PostgreSQL connection string for the Supabase database used by the Go backend.
   
   This string contains all necessary database connection parameters including host, port, database name, user, and password.
   
   The server will fail to start if this variable is not set or if the database cannot be reached.
   
   **Example:** `postgresql://user:password@host:5432/database`
+  
+  **Usage:** backend/main.go:174
 </ParamField>
 
-## Environment file
+### Frontend database connection
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string for the frontend Next.js application.
+  
+  This connection string is used by the Next.js server actions to query emails from the database.
+  
+  **Example:** `postgresql://user:password@host:5432/database`
+  
+  **Usage:** ui/src/lib/db.ts:4
+</ParamField>
+
+<Note>
+Both `SUPABASE_CONN_STRING` and `DATABASE_URL` should point to the same PostgreSQL database but are used by different parts of the application (backend vs frontend).
+</Note>
+
+## Environment files
+
+### Backend environment file
 
 You can set these variables in a `.env` file in the backend directory:
 
@@ -37,3 +59,11 @@ SUPABASE_CONN_STRING=postgresql://user:password@host:5432/database
 ```
 
 The server will automatically load environment variables from the `.env` file if present (backend/main.go:28-32).
+
+### Frontend environment file
+
+For the Next.js frontend, create a `.env.local` file in the `ui` directory:
+
+```bash
+DATABASE_URL=postgresql://user:password@host:5432/database
+```

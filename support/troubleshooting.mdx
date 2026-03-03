@@ -220,20 +220,22 @@ go build -o zapmail backend/main.go
 
 **Common errors:**
 
-<Accordion title="Missing dependencies">
-  ```
-  cannot find package "github.com/lib/pq"
-  cannot find package "github.com/joho/godotenv"
-  ```
-  
-  **Solution:**
-  ```bash
-  cd backend
-  go mod init zapmail
-  go mod tidy
-  go build -o zapmail main.go
-  ```
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Missing dependencies">
+    ```
+    cannot find package "github.com/lib/pq"
+    cannot find package "github.com/joho/godotenv"
+    ```
+    
+    **Solution:**
+    ```bash
+    cd backend
+    go mod init zapmail
+    go mod tidy
+    go build -o zapmail main.go
+    ```
+  </Accordion>
+</AccordionGroup>
 
 ## Performance issues
 

@@ -62,15 +62,17 @@ Actual deletion occurs during the next scheduled cleanup run after the 7-day mar
 
 Zapmail stores minimal information for each email:
 
-<Accordion title="Database fields">
-  | Field | Description | Example |
-  |-------|-------------|----------|
-  | `id` | Auto-incrementing unique identifier | 12345 |
-  | `username` | Extracted from recipient address | john |
-  | `recipient` | Full recipient address | `<john@zapmail.parth.lol>` |
-  | `raw_data` | Complete raw email content | (MIME-encoded email) |
-  | `received_at` | Server timestamp when email arrived | 2026-03-03 14:32:01 |
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Database fields">
+    | Field | Description | Example |
+    |-------|-------------|----------|
+    | `id` | Auto-incrementing unique identifier | 12345 |
+    | `username` | Extracted from recipient address | john |
+    | `recipient` | Full recipient address | `<john@zapmail.parth.lol>` |
+    | `raw_data` | Complete raw email content | (MIME-encoded email) |
+    | `received_at` | Server timestamp when email arrived | 2026-03-03 14:32:01 |
+  </Accordion>
+</AccordionGroup>
 
 <Info>
   The `raw_data` field contains the entire email as received by the SMTP server, including headers, body, and any attachments. This is parsed on-demand when you view emails.
@@ -136,20 +138,22 @@ The Go backend connects to the database using:
 
 The custom SMTP server:
 
-<Accordion title="Security features">
-  - Validates SMTP command syntax
-  - Logs all connection attempts
-  - Handles connection errors gracefully
-  - Prevents buffer overflow with line-by-line reading
-  - Limits data collection to standard SMTP terminator (single period)
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Security features">
+    - Validates SMTP command syntax
+    - Logs all connection attempts
+    - Handles connection errors gracefully
+    - Prevents buffer overflow with line-by-line reading
+    - Limits data collection to standard SMTP terminator (single period)
+  </Accordion>
 
-<Accordion title="Security limitations">
-  - No TLS/SSL encryption for incoming SMTP connections
-  - No sender authentication (accepts mail from anyone)
-  - No SPF/DKIM verification
-  - No spam filtering or malware scanning
-</Accordion>
+  <Accordion title="Security limitations">
+    - No TLS/SSL encryption for incoming SMTP connections
+    - No sender authentication (accepts mail from anyone)
+    - No SPF/DKIM verification
+    - No spam filtering or malware scanning
+  </Accordion>
+</AccordionGroup>
 
 <Warning>
   The SMTP server accepts emails from any sender without verification. Be cautious when opening emails from unknown sources, especially those containing links or attachments.

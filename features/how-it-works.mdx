@@ -96,20 +96,22 @@ This separation allows the SMTP server to remain lightweight and fast, while the
 
 Zapmail's SMTP server implements the following commands:
 
-<Accordion title="Core commands">
-  - `HELO` / `EHLO` - Identify the client to the server
-  - `MAIL FROM` - Specify the sender's email address
-  - `RCPT TO` - Specify the recipient's email address
-  - `DATA` - Begin transmission of email content
-  - `QUIT` - Close the connection
-</Accordion>
+<AccordionGroup>
+  <Accordion title="Core commands">
+    - `HELO` / `EHLO` - Identify the client to the server
+    - `MAIL FROM` - Specify the sender's email address
+    - `RCPT TO` - Specify the recipient's email address
+    - `DATA` - Begin transmission of email content
+    - `QUIT` - Close the connection
+  </Accordion>
 
-<Accordion title="Optional commands">
-  - `NOOP` - No operation (keeps connection alive)
-  - `HELP` - Lists supported commands
-  - `VRFY` - Verify an email address (returns "not supported")
-  - `EXPN` - Expand a mailing list (returns "not supported")
-</Accordion>
+  <Accordion title="Optional commands">
+    - `NOOP` - No operation (keeps connection alive)
+    - `HELP` - Lists supported commands
+    - `VRFY` - Verify an email address (returns "not supported")
+    - `EXPN` - Expand a mailing list (returns "not supported")
+  </Accordion>
+</AccordionGroup>
 
 <Note>
   Any unrecognized SMTP command receives a `500 Unrecognized command` response, ensuring compatibility with standard SMTP clients.
