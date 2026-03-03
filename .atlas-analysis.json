@@ -1,0 +1,89 @@
+{
+  "projectType": "saas",
+  "projectName": "Zapmail",
+  "projectDescription": "A lightweight temporary email service with custom SMTP server and modern web interface.",
+  "theme": "palm",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#7C3AED",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/how-it-works",
+              "features/email-viewing",
+              "features/privacy-security"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/backend-setup",
+              "deployment/frontend-setup",
+              "deployment/configuration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/architecture",
+              "development/smtp-server",
+              "development/database-schema"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/environment-variables",
+              "reference/smtp-commands",
+              "reference/api-actions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Support",
+        "groups": [
+          {
+            "group": "Help",
+            "pages": [
+              "support/faq",
+              "support/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Custom SMTP server built from scratch in Go",
+    "Temporary email addresses with automatic cleanup",
+    "Real-time email receiving and viewing",
+    "Modern Next.js web interface",
+    "PostgreSQL database integration",
+    "Email parsing and display"
+  ],
+  "publicApiSurface": [
+    "searchEmails(rcptQuery: string)",
+    "parseEmail(rawData: string)",
+    "SMTP Commands: HELO, EHLO, MAIL FROM, RCPT TO, DATA, QUIT",
+    "Environment Variables: PORT, SUPABASE_CONN_STRING"
+  ]
+}
