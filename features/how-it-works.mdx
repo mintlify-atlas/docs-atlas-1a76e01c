@@ -1,0 +1,129 @@
+---
+title: How it works
+description: Understanding the email flow from SMTP reception to web display
+---
+
+Zapmail processes incoming emails through a custom SMTP server and displays them in a web interface. This page explains the complete email flow from reception to viewing.
+
+## Email flow overview
+
+<Steps>
+  <Step title="SMTP server receives email">
+    When someone sends an email to `username@zapmail.parth.lol`, it arrives at Zapmail's custom SMTP server running on Go. The server accepts the connection and responds with a greeting:
+    
+    ```
+    220 Welcome to Temporary Mail Service
+    ```
+  </Step>
+
+  <Step title="SMTP handshake">
+    The SMTP server processes standard SMTP commands in sequence:
+    - `HELO` or `EHLO` - Establishes the connection
+    - `MAIL FROM` - Identifies the sender
+    - `RCPT TO` - Specifies the recipient (e.g., `<username@zapmail.parth.lol>`)
+    - `DATA` - Indicates the start of the email content
+  </Step>
+
+  <Step title="Email data collection">
+    After receiving the `DATA` command, the server collects all email content line by line until it encounters a single period (`.`) on a line by itself. This raw email data includes:
+    - Email headers (From, To, Subject, Date, etc.)
+    - MIME parts and content-type information
+    - HTML and plain text body content
+    - Any attachments or embedded images
+  </Step>
+
+  <Step title="Username extraction">
+    The server extracts the username from the recipient address by:
+    1. Removing angle brackets (`<` and `>`)
+    2. Splitting on the `@` symbol
+    3. Taking the first part as the username
+    
+    For example, `<john@zapmail.parth.lol>` becomes `john`.
+  </Step>
+
+  <Step title="Database storage">
+    The email is stored in a PostgreSQL (Supabase) database with the following information:
+    - `username` - The extracted username portion
+    - `recipient` - The full recipient address with angle brackets
+    - `raw_data` - The complete raw email content
+    - `received_at` - Timestamp of when the email was received
+  </Step>
+
+  <Step title="Web interface retrieval">
+    When you visit your inbox at `/user?q=username`, the web application:
+    1. Queries the database for all emails where `recipient = <username@zapmail.parth.lol>`
+    2. Parses each raw email using the `mailparser` library
+    3. Extracts structured data (subject, from, body, attachments, date)
+    4. Displays emails in reverse chronological order (newest first)
+  </Step>
+</Steps>
+
+## Technical architecture
+
+### SMTP server (Go)
+
+The backend SMTP server handles concurrent connections using goroutines. Each incoming connection is processed independently:
+
+```go
+for {
+    conn, err := ln.Accept()
+    if err != nil {
+        log.Println("Error accepting connection:", err)
+        continue
+    }
+    go handleConnection(conn, db)
+}
+```
+
+<Info>
+  The server supports multiple simultaneous email deliveries without blocking, making it efficient for handling high volumes of incoming mail.
+</Info>
+
+### Email parsing
+
+Raw email data is stored as-is in the database. When you access your inbox, the Next.js application parses the raw email to extract:
+
+- **Subject line** - The email's subject
+- **From address** - Sender's email address and name
+- **Date** - When the email was sent
+- **Text content** - Plain text version of the email body
+- **HTML content** - Rich HTML version for display
+- **Attachments** - Any files attached to the email
+
+This separation allows the SMTP server to remain lightweight and fast, while the web interface handles the complex parsing logic.
+
+## Supported SMTP commands
+
+Zapmail's SMTP server implements the following commands:
+
+<Accordion title="Core commands">
+  - `HELO` / `EHLO` - Identify the client to the server
+  - `MAIL FROM` - Specify the sender's email address
+  - `RCPT TO` - Specify the recipient's email address
+  - `DATA` - Begin transmission of email content
+  - `QUIT` - Close the connection
+</Accordion>
+
+<Accordion title="Optional commands">
+  - `NOOP` - No operation (keeps connection alive)
+  - `HELP` - Lists supported commands
+  - `VRFY` - Verify an email address (returns "not supported")
+  - `EXPN` - Expand a mailing list (returns "not supported")
+</Accordion>
+
+<Note>
+  Any unrecognized SMTP command receives a `500 Unrecognized command` response, ensuring compatibility with standard SMTP clients.
+</Note>
+
+## Response codes
+
+The SMTP server uses standard response codes:
+
+- **220** - Service ready (initial greeting)
+- **250** - Requested action completed successfully
+- **354** - Start mail input (after DATA command)
+- **221** - Service closing connection (after QUIT)
+- **500** - Command not recognized
+- **550** - Error (e.g., failed to store email)
+
+These codes ensure compatibility with all standard email clients and services.

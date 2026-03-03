@@ -1,0 +1,39 @@
+---
+title: Environment variables
+description: Configuration environment variables for Zapmail server and database
+---
+
+Zapmail requires the following environment variables to be set for proper operation.
+
+## Server configuration
+
+<ParamField path="PORT" type="string" required>
+  The port number on which the SMTP server listens for incoming connections.
+  
+  The server will fail to start if this variable is not set.
+  
+  **Example:** `2525` or `25`
+</ParamField>
+
+## Database configuration
+
+<ParamField path="SUPABASE_CONN_STRING" type="string" required>
+  PostgreSQL connection string for the Supabase database.
+  
+  This string contains all necessary database connection parameters including host, port, database name, user, and password.
+  
+  The server will fail to start if this variable is not set or if the database cannot be reached.
+  
+  **Example:** `postgresql://user:password@host:5432/database`
+</ParamField>
+
+## Environment file
+
+You can set these variables in a `.env` file in the backend directory:
+
+```bash
+PORT=2525
+SUPABASE_CONN_STRING=postgresql://user:password@host:5432/database
+```
+
+The server will automatically load environment variables from the `.env` file if present (backend/main.go:28-32).

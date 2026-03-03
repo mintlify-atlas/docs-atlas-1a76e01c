@@ -1,0 +1,101 @@
+---
+title: Deployment overview
+description: Learn about Zapmail's deployment architecture and prerequisites
+---
+
+Zapmail consists of two main components that work together to provide a complete temporary email service: a Go-based SMTP server backend and a Next.js web interface frontend.
+
+## Architecture
+
+Zapmail's deployment architecture includes:
+
+- **SMTP Server**: A custom Go server that handles incoming emails via the SMTP protocol
+- **Web Interface**: A Next.js application that provides the user interface for managing temporary email addresses
+- **Database**: PostgreSQL/Supabase for storing emails and user data
+- **Email Processing**: Automatic cleanup job that purges emails older than 7 days
+
+## Component overview
+
+<Steps>
+  <Step title="SMTP server (Go backend)">
+    The backend server listens on a configurable port and processes SMTP commands including `HELO`, `EHLO`, `MAIL FROM`, `RCPT TO`, `DATA`, and `QUIT`. It stores incoming emails in PostgreSQL and runs a cleanup job every hour.
+  </Step>
+  
+  <Step title="Web interface (Next.js frontend)">
+    The frontend provides a user-friendly interface for users to create temporary email addresses, view received emails, and manage their inbox. Built with Next.js 15 and React 19.
+  </Step>
+  
+  <Step title="Database layer">
+    PostgreSQL database (hosted on Supabase) stores email records with fields for username, recipient, raw email data, and received timestamp.
+  </Step>
+</Steps>
+
+## Prerequisites
+
+Before deploying Zapmail, ensure you have:
+
+### For backend deployment
+
+- Go 1.23.6 or later installed
+- Access to a PostgreSQL database (Supabase recommended)
+- A server or hosting platform with TCP port access
+- Environment variables configured
+
+### For frontend deployment
+
+- Node.js 20 or later
+- npm, pnpm, or yarn package manager
+- Access to the same PostgreSQL database as the backend
+- A hosting platform supporting Next.js (Vercel, Railway, etc.)
+
+### Database requirements
+
+Your PostgreSQL database must have an `emails` table with the following schema:
+
+```sql
+CREATE TABLE emails (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) NOT NULL,
+  recipient VARCHAR(255) NOT NULL,
+  raw_data TEXT NOT NULL,
+  received_at TIMESTAMP NOT NULL
+);
+```
+
+<Note>
+  The backend automatically handles email cleanup - emails older than 7 days are purged hourly.
+</Note>
+
+## Deployment flow
+
+<Steps>
+  <Step title="Set up database">
+    Create a PostgreSQL database on Supabase and configure the required table schema.
+  </Step>
+  
+  <Step title="Deploy backend">
+    Build and deploy the Go SMTP server with proper environment variables.
+  </Step>
+  
+  <Step title="Deploy frontend">
+    Build and deploy the Next.js web interface connected to the same database.
+  </Step>
+  
+  <Step title="Configure settings">
+    Set up environment variables and verify connectivity between components.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Backend setup" icon="server" href="/deployment/backend-setup">
+    Deploy the Go SMTP server
+  </Card>
+  <Card title="Frontend setup" icon="browser" href="/deployment/frontend-setup">
+    Deploy the Next.js interface
+  </Card>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Configure environment variables
+  </Card>
+</CardGroup>

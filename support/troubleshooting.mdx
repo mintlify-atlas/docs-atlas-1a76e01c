@@ -1,0 +1,281 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues and solutions for Zapmail'
+---
+
+## Emails not appearing
+
+### Email sent but not showing in inbox
+
+If you've sent an email to your temporary address but it's not appearing in the inbox, try these steps:
+
+<Steps>
+  <Step title="Verify the recipient address">
+    Double-check that the email was sent to the exact address shown in Zapmail. The username is case-sensitive and must match exactly.
+    
+    The backend extracts the username using `strings.Split(rcpt, "@")` (`backend/main.go:163-170`), so any typos will result in the email being stored under a different username.
+  </Step>
+  
+  <Step title="Refresh your browser">
+    Manually refresh the page or wait for the automatic refresh cycle. The frontend polls the API for new emails at regular intervals.
+  </Step>
+  
+  <Step title="Check if email was received by the server">
+    If you have access to server logs, check for entries showing the email was received:
+    
+    ```
+    Received: MAIL FROM:<sender@example.com>
+    Received: RCPT TO:<youraddress@domain.com>
+    Received raw email data:
+    ```
+    
+    These log messages indicate the SMTP server successfully received the email.
+  </Step>
+  
+  <Step title="Verify database storage">
+    If the email was received but not displayed, there may be a database storage issue. Check logs for:
+    
+    ```
+    Error storing email: [error details]
+    ```
+    
+    This would indicate the SMTP server responded with `550 Error storing email` (`backend/main.go:147`).
+  </Step>
+</Steps>
+
+<Warning>
+  Emails older than 7 days are automatically deleted. If you're looking for an old email, it may have been purged by the cleanup job.
+</Warning>
+
+### Email rejected with error code
+
+If the sending server reports an error when trying to deliver to your Zapmail address:
+
+**500 Unrecognized command**
+- The sending server used an SMTP command not supported by Zapmail
+- See the list of supported commands: `HELO, EHLO, MAIL FROM, RCPT TO, DATA, NOOP, VRFY, HELP, EXPN, QUIT` (`backend/main.go:101-102`)
+
+**550 Error storing email**
+- The SMTP server received the email but couldn't save it to the database
+- This indicates a database connection or query execution error
+- Check the Supabase connection and database schema
+
+<Tip>
+  Use the `HELP` command to see what commands the server supports:
+  ```
+  telnet yourdomain.com 2525
+  HELP
+  ```
+</Tip>
+
+## Connection issues
+
+### Cannot connect to SMTP server
+
+If external mail servers cannot connect to your Zapmail SMTP server:
+
+<AccordionGroup>
+  <Accordion title="Server not listening">
+    **Symptoms:** Connection refused or timeout errors
+    
+    **Diagnosis:**
+    1. Check if the server is running:
+       ```bash
+       ps aux | grep main
+       ```
+    
+    2. Verify the server is listening on the correct port:
+       ```bash
+       netstat -tlnp | grep :2525
+       ```
+    
+    3. Check server startup logs:
+       ```
+       Temporary Mail Service SMTP Server listening on port 2525
+       ```
+    
+    **Solutions:**
+    - Ensure the `PORT` environment variable is set (`backend/main.go:40-43`)
+    - Verify the server process started without errors
+    - Check that no other service is using the same port
+  </Accordion>
+  
+  <Accordion title="Firewall blocking connections">
+    **Symptoms:** External connections time out, but local connections work
+    
+    **Solutions:**
+    - Open the SMTP port in your firewall (e.g., port 2525)
+    - Configure cloud provider security groups to allow inbound TCP traffic on the SMTP port
+    - Verify the server is bound to `0.0.0.0` (all interfaces) not just `127.0.0.1` (localhost)
+    
+    Test external connectivity:
+    ```bash
+    telnet your-domain.com 2525
+    ```
+    
+    You should see:
+    ```
+    220 Welcome to Temporary Mail Service
+    ```
+  </Accordion>
+  
+  <Accordion title="Database connection failure">
+    **Symptoms:** Server starts but crashes when trying to store emails
+    
+    **Error messages:**
+    ```
+    Error connecting to DB: [details]
+    Cannot ping DB: [details]
+    ```
+    
+    **Solutions:**
+    1. Verify `SUPABASE_CONN_STRING` environment variable is set correctly
+    2. Test database connectivity:
+       ```bash
+       psql "$SUPABASE_CONN_STRING"
+       ```
+    3. Check Supabase project status and connection limits
+    4. Verify the `emails` table exists with correct schema
+    
+    The connection is tested at startup (`backend/main.go:179-181`):
+    ```go
+    if err := db.Ping(); err != nil {
+        log.Fatal("Cannot ping DB:", err)
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Frontend cannot reach API
+
+If the web interface loads but cannot fetch emails:
+
+1. **Check API endpoint configuration** - Verify the Next.js app is configured with the correct API URL
+2. **CORS issues** - Ensure the backend allows requests from the frontend domain
+3. **Network connectivity** - Test the API endpoint directly using curl or Postman
+
+## Deployment problems
+
+### Environment variables not set
+
+The backend requires specific environment variables to function:
+
+<CodeGroup>
+```bash Required variables
+# SMTP server port (required)
+export PORT=2525
+
+# Supabase/PostgreSQL connection string (required)
+export SUPABASE_CONN_STRING="postgresql://user:password@host:5432/database"
+```
+
+```bash Validation
+# Check if variables are set
+echo $PORT
+echo $SUPABASE_CONN_STRING
+```
+</CodeGroup>
+
+<Warning>
+  If `PORT` is not set, the server will exit with: `PORT environment variable not set` (`backend/main.go:42`)
+</Warning>
+
+### Docker deployment issues
+
+<AccordionGroup>
+  <Accordion title="Container exits immediately">
+    **Check logs:**
+    ```bash
+    docker logs <container-id>
+    ```
+    
+    Common issues:
+    - Missing environment variables
+    - Database connection failure
+    - Port already in use on host
+    
+    **Solution:** Pass environment variables to container:
+    ```bash
+    docker run -e PORT=2525 -e SUPABASE_CONN_STRING="..." -p 2525:2525 zapmail
+    ```
+  </Accordion>
+  
+  <Accordion title="Cannot access server from host">
+    Ensure the port is properly mapped:
+    ```bash
+    docker run -p 2525:2525 zapmail
+    ```
+    
+    The first port (2525) is the host port, the second is the container port. They should match the `PORT` environment variable.
+  </Accordion>
+</AccordionGroup>
+
+### Build failures
+
+When building the Go backend:
+
+```bash Build command
+go build -o zapmail backend/main.go
+```
+
+**Common errors:**
+
+<Accordion title="Missing dependencies">
+  ```
+  cannot find package "github.com/lib/pq"
+  cannot find package "github.com/joho/godotenv"
+  ```
+  
+  **Solution:**
+  ```bash
+  cd backend
+  go mod init zapmail
+  go mod tidy
+  go build -o zapmail main.go
+  ```
+</Accordion>
+
+## Performance issues
+
+### Slow email delivery
+
+The SMTP server processes each connection in a separate goroutine (`backend/main.go:60`), allowing concurrent processing. If emails are slow to arrive:
+
+1. **Check server load** - Monitor CPU and memory usage
+2. **Database performance** - Slow inserts may indicate database issues
+3. **Network latency** - Test connection speed to your database
+
+### Memory usage growing
+
+If memory usage continuously increases:
+
+1. **Verify cleanup job is running** - Check logs for:
+   ```
+   Cleanup job: Old emails removed.
+   ```
+
+2. **Check for connection leaks** - Ensure connections are being closed properly
+   - The `defer conn.Close()` at `backend/main.go:66` should close each connection
+
+3. **Database connection pooling** - Monitor active database connections
+
+<Tip>
+  Enable detailed logging to diagnose performance issues. The server logs all received SMTP commands at `backend/main.go:90`.
+</Tip>
+
+## Getting help
+
+If you're still experiencing issues:
+
+1. Check server logs for error messages
+2. Review the [Architecture](/development/architecture) guide for debugging tips
+3. Verify your configuration matches the [Quickstart](/quickstart) instructions
+4. Test SMTP connectivity using telnet or similar tools
+
+<Note>
+  When reporting issues, include:
+  - Error messages from server logs
+  - SMTP response codes received
+  - Steps to reproduce the problem
+  - Your deployment environment (local, Docker, cloud platform)
+</Note>

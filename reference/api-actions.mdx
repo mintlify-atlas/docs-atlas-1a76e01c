@@ -1,0 +1,141 @@
+---
+title: API actions
+description: Next.js server actions for email retrieval and parsing
+---
+
+Zapmail provides server actions for searching and parsing emails stored in the database.
+
+## searchEmails
+
+Searches for emails sent to a specific username and returns parsed email data.
+
+**Function signature:**
+```typescript
+async function searchEmails(rcptQuery: string)
+```
+
+### Parameters
+
+<ParamField path="rcptQuery" type="string" required>
+  The username portion of the email address to search for (without the `@zapmail.parth.lol` domain).
+  
+  The function automatically formats this into the full recipient address with angle brackets.
+  
+  **Example:** `"user123"` is formatted to `"<user123@zapmail.parth.lol>"`
+</ParamField>
+
+### Returns
+
+<ResponseField name="output" type="array">
+  An array of email objects, ordered by received date (most recent first).
+  
+  <ResponseField name="id" type="number">
+    Unique database identifier for the email.
+  </ResponseField>
+  
+  <ResponseField name="date" type="Date">
+    Timestamp when the email was received by the server.
+  </ResponseField>
+  
+  <ResponseField name="mail_from" type="string">
+    The username extracted from the recipient field.
+  </ResponseField>
+  
+  <ResponseField name="rcpt_to" type="string">
+    The full recipient address in angle bracket format.
+  </ResponseField>
+  
+  <ResponseField name="data" type="EmailContent">
+    The parsed email content object returned by `parseEmail`.
+  </ResponseField>
+</ResponseField>
+
+### Example
+
+```typescript
+import { searchEmails } from "@/app/actions/actions";
+
+const emails = await searchEmails("user123");
+// Returns array of emails sent to user123@zapmail.parth.lol
+```
+
+### Error handling
+
+Throws an error if the database query fails. Individual email parsing errors are logged but do not stop processing of other emails.
+
+**Source:** ui/src/app/actions/actions.ts:6-49
+
+---
+
+## parseEmail
+
+Parses raw email data into a structured format using the mailparser library.
+
+**Function signature:**
+```typescript
+async function parseEmail(data: string): Promise<EmailContent>
+```
+
+### Parameters
+
+<ParamField path="data" type="string" required>
+  Raw email data in RFC 822 format (headers and body).
+  
+  This is typically the raw SMTP DATA content stored in the database.
+</ParamField>
+
+### Returns
+
+<ResponseField name="EmailContent" type="object">
+  A parsed email content object.
+  
+  <ResponseField name="subject" type="string">
+    The email subject line. Empty string if not present.
+  </ResponseField>
+  
+  <ResponseField name="from" type="string">
+    The sender's email address in text format. Empty string if not present.
+  </ResponseField>
+  
+  <ResponseField name="text" type="string">
+    Plain text version of the email body. Empty string if not present.
+  </ResponseField>
+  
+  <ResponseField name="html" type="string">
+    HTML version of the email body. Empty string if not present.
+  </ResponseField>
+  
+  <ResponseField name="text_as_html" type="string">
+    Plain text converted to HTML format. Empty string if not present.
+  </ResponseField>
+  
+  <ResponseField name="attachments" type="Attachment[]">
+    Array of email attachments. Empty array if no attachments.
+  </ResponseField>
+  
+  <ResponseField name="date" type="Date">
+    The date from the email headers. Defaults to current date if not present.
+  </ResponseField>
+</ResponseField>
+
+### Example
+
+```typescript
+import { parseEmail } from "@/hooks/emailParser";
+
+const rawEmail = `Subject: Test
+From: sender@example.com
+
+Hello World`;
+
+const parsed = await parseEmail(rawEmail);
+console.log(parsed.subject); // "Test"
+console.log(parsed.from); // "sender@example.com"
+console.log(parsed.text); // "Hello World"
+```
+
+### Error handling
+
+Throws an error if the email cannot be parsed. The error is logged to the console before being thrown.
+
+**Source:** ui/src/hooks/emailParser.ts:13-30

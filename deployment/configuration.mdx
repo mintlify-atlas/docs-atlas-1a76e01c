@@ -1,0 +1,410 @@
+---
+title: Configuration
+description: Environment variables and configuration settings for Zapmail
+---
+
+Zapmail requires specific environment variables to connect the backend SMTP server, frontend web interface, and PostgreSQL database.
+
+## Backend environment variables
+
+The Go SMTP server requires these environment variables:
+
+### PORT
+
+<ParamField path="PORT" type="string" required>
+  The TCP port number for the SMTP server to listen on.
+</ParamField>
+
+**Usage in code** (backend/main.go:40-43):
+
+```go
+port := os.Getenv("PORT")
+if port == "" {
+    log.Fatal("PORT environment variable not set")
+}
+```
+
+**Example values**:
+
+- `2525` - Standard alternative SMTP port (recommended)
+- `25` - Standard SMTP port (requires root on Linux)
+- `587` - Submission port
+- Any custom port number
+
+<Warning>
+  The server will fail to start if `PORT` is not set. This is a required environment variable.
+</Warning>
+
+### SUPABASE_CONN_STRING
+
+<ParamField path="SUPABASE_CONN_STRING" type="string" required>
+  PostgreSQL connection string for database access.
+</ParamField>
+
+**Usage in code** (backend/main.go:174-183):
+
+```go
+func connectDB() *sql.DB {
+    connStr := os.Getenv("SUPABASE_CONN_STRING")
+    db, err := sql.Open("postgres", connStr)
+    if err != nil {
+        log.Fatal("Error connecting to DB:", err)
+    }
+    if err := db.Ping(); err != nil {
+        log.Fatal("Cannot ping DB:", err)
+    }
+    return db
+}
+```
+
+**Format**:
+
+```
+postgresql://username:password@host:port/database?options
+```
+
+**Example values**:
+
+<CodeGroup>
+  ```bash Supabase
+  SUPABASE_CONN_STRING="postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+  ```
+  
+  ```bash Local PostgreSQL
+  SUPABASE_CONN_STRING="postgresql://user:password@localhost:5432/zapmail"
+  ```
+  
+  ```bash Railway PostgreSQL
+  SUPABASE_CONN_STRING="postgresql://postgres:password@containers-us-west-123.railway.app:5432/railway"
+  ```
+  
+  ```bash With SSL mode
+  SUPABASE_CONN_STRING="postgresql://user:password@host:5432/db?sslmode=require"
+  ```
+</CodeGroup>
+
+<Note>
+  Despite the variable name containing "SUPABASE", this can be any PostgreSQL connection string, not just Supabase.
+</Note>
+
+## Frontend environment variables
+
+The Next.js web interface requires these environment variables:
+
+### DATABASE_URL
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string for the frontend database connection pool.
+</ParamField>
+
+**Usage in code** (ui/src/lib/db.ts:1-6):
+
+```typescript
+import { Pool } from "pg";
+
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+```
+
+**Format**:
+
+```
+postgresql://username:password@host:port/database?options
+```
+
+<Warning>
+  The `DATABASE_URL` should point to the same PostgreSQL database as `SUPABASE_CONN_STRING` in the backend.
+</Warning>
+
+**Example values**:
+
+<CodeGroup>
+  ```bash Supabase
+  DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+  ```
+  
+  ```bash Local development
+  DATABASE_URL="postgresql://user:password@localhost:5432/zapmail"
+  ```
+  
+  ```bash Production
+  DATABASE_URL="postgresql://postgres:password@db.example.com:5432/zapmail?sslmode=require"
+  ```
+</CodeGroup>
+
+## Configuration files
+
+### Backend .env file
+
+Create a `.env` file in the `backend` directory:
+
+```bash
+# SMTP Server Port
+PORT=2525
+
+# PostgreSQL Connection String
+SUPABASE_CONN_STRING=postgresql://user:password@host:port/database
+```
+
+The backend uses `github.com/joho/godotenv` to load environment variables from `.env` (backend/main.go:28-33):
+
+```go
+func init() {
+    err := godotenv.Load()
+    if err != nil {
+        log.Println("No .env file found")
+    }
+}
+```
+
+<Note>
+  If no `.env` file is found, the server will log a warning but continue if environment variables are set through other means (system environment, Docker, etc.).
+</Note>
+
+### Frontend .env.local file
+
+Create a `.env.local` file in the `ui` directory:
+
+```bash
+# PostgreSQL Connection String
+DATABASE_URL=postgresql://user:password@host:port/database
+```
+
+<Warning>
+  Never commit `.env` or `.env.local` files to version control. Add them to `.gitignore`.
+</Warning>
+
+## Database schema
+
+Both backend and frontend require the following PostgreSQL table:
+
+```sql
+CREATE TABLE emails (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) NOT NULL,
+  recipient VARCHAR(255) NOT NULL,
+  raw_data TEXT NOT NULL,
+  received_at TIMESTAMP NOT NULL
+);
+```
+
+**Column descriptions**:
+
+- `id` - Auto-incrementing primary key
+- `username` - Extracted from email recipient (part before @)
+- `recipient` - Full recipient email address
+- `raw_data` - Complete raw email content including headers
+- `received_at` - Timestamp when email was received
+
+**Usage in code** (backend/main.go:186-193):
+
+```go
+func storeEmail(db *sql.DB, email Email) error {
+    query := `
+        INSERT INTO emails (username, recipient, raw_data, received_at)
+        VALUES ($1, $2, $3, $4)
+    `
+    _, err := db.Exec(query, email.Username, email.Recipient, email.RawData, email.ReceivedAt)
+    return err
+}
+```
+
+## Advanced configuration
+
+### Connection pool settings
+
+For production deployments, you may want to configure the PostgreSQL connection pool in the frontend:
+
+```typescript
+import { Pool } from "pg";
+
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Maximum pool size
+  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 2000, // Return error after 2 seconds if no connection available
+});
+```
+
+### SMTP server customization
+
+The SMTP server behavior is configured in code. To customize:
+
+**Cleanup interval** (backend/main.go:197):
+
+```go
+// Change cleanup frequency from 1 hour to custom value
+ticker := time.NewTicker(1 * time.Hour)
+```
+
+**Email retention period** (backend/main.go:200):
+
+```go
+// Change from 7 days to custom retention
+db.Exec(`DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`)
+```
+
+**Welcome message** (backend/main.go:71):
+
+```go
+// Customize SMTP greeting
+writer.WriteString("220 Welcome to Temporary Mail Service\r\n")
+```
+
+### Next.js configuration
+
+The Next.js configuration can be extended in `ui/next.config.ts`:
+
+```typescript
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    domains: ["upload.wikimedia.org"],
+  },
+  // Add custom configuration
+  output: 'standalone', // For Docker deployments
+  poweredByHeader: false, // Remove X-Powered-By header
+  compress: true, // Enable gzip compression
+};
+
+export default nextConfig;
+```
+
+## Platform-specific configuration
+
+### Vercel
+
+Add environment variables in the Vercel dashboard:
+
+1. Go to Project Settings > Environment Variables
+2. Add `DATABASE_URL` with your PostgreSQL connection string
+3. Select appropriate environments (Production, Preview, Development)
+
+### Railway
+
+Railway can auto-provision PostgreSQL:
+
+1. Add PostgreSQL plugin to your project
+2. Railway automatically provides `DATABASE_URL`
+3. For backend, add `PORT` and `SUPABASE_CONN_STRING` (use Railway's `DATABASE_URL`)
+
+### Docker Compose
+
+Example configuration with all services:
+
+```yaml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: zapmail
+      POSTGRES_USER: zapmail
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  
+  backend:
+    build: ./backend
+    environment:
+      PORT: 2525
+      SUPABASE_CONN_STRING: postgresql://zapmail:changeme@postgres:5432/zapmail
+    ports:
+      - "2525:2525"
+    depends_on:
+      - postgres
+  
+  frontend:
+    build: ./ui
+    environment:
+      DATABASE_URL: postgresql://zapmail:changeme@postgres:5432/zapmail
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+```
+
+## Security best practices
+
+<Steps>
+  <Step title="Use strong database passwords">
+    Generate secure passwords for PostgreSQL users:
+    
+    ```bash
+    openssl rand -base64 32
+    ```
+  </Step>
+  
+  <Step title="Enable SSL for database connections">
+    Add `?sslmode=require` to connection strings:
+    
+    ```bash
+    DATABASE_URL="postgresql://user:pass@host:5432/db?sslmode=require"
+    ```
+  </Step>
+  
+  <Step title="Restrict database access">
+    Configure PostgreSQL to only accept connections from your application servers.
+  </Step>
+  
+  <Step title="Use environment-specific variables">
+    Never use production credentials in development environments.
+  </Step>
+  
+  <Step title="Rotate credentials regularly">
+    Update database passwords and connection strings periodically.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Environment variable not found
+
+If you see "PORT environment variable not set":
+
+- Check the variable is defined in `.env` or system environment
+- Ensure variable names match exactly (case-sensitive)
+- Restart the application after changing environment variables
+
+### Database connection failed
+
+If you see "Error connecting to DB" or "Cannot ping DB":
+
+- Verify the connection string format is correct
+- Test the connection with `psql`:
+  ```bash
+  psql "postgresql://user:password@host:port/database"
+  ```
+- Check network access and firewall rules
+- Verify database credentials are correct
+
+### Frontend can't read environment variables
+
+In Next.js:
+
+- Server-side variables (like `DATABASE_URL`) are only available in API routes and server components
+- Client-side variables must be prefixed with `NEXT_PUBLIC_`
+- Restart the dev server after changing `.env.local`
+
+<Note>
+  The `DATABASE_URL` is server-side only and cannot be accessed from client components.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Backend setup" icon="server" href="/deployment/backend-setup">
+    Deploy the Go SMTP server
+  </Card>
+  <Card title="Frontend setup" icon="browser" href="/deployment/frontend-setup">
+    Deploy the Next.js interface
+  </Card>
+</CardGroup>

@@ -1,0 +1,254 @@
+---
+title: Backend setup
+description: Deploy the Go SMTP server with database integration
+---
+
+The Zapmail backend is a custom SMTP server written in Go that handles incoming emails and stores them in PostgreSQL.
+
+## Prerequisites
+
+Before deploying the backend, ensure you have:
+
+- Go 1.23.6 or later installed
+- PostgreSQL database (Supabase recommended)
+- Access to a server with TCP port availability
+- Git installed for cloning the repository
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Zapmail repository and navigate to the backend directory:
+    
+    ```bash
+    git clone https://github.com/yourusername/zapmail.git
+    cd zapmail/backend
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    Download the required Go modules:
+    
+    ```bash
+    go mod download
+    ```
+    
+    The backend uses these dependencies:
+    - `github.com/lib/pq` - PostgreSQL driver
+    - `github.com/joho/godotenv` - Environment variable management
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Create a `.env` file in the backend directory:
+    
+    ```bash
+    touch .env
+    ```
+    
+    Add the required environment variables:
+    
+    ```bash
+    PORT=2525
+    SUPABASE_CONN_STRING=postgresql://user:password@host:port/database
+    ```
+    
+    <Note>
+      The `PORT` variable determines which port the SMTP server listens on. The `SUPABASE_CONN_STRING` is your PostgreSQL connection string.
+    </Note>
+  </Step>
+  
+  <Step title="Build the server">
+    Compile the Go application into an executable:
+    
+    ```bash
+    go build -o zapmail main.go
+    ```
+    
+    This creates a binary named `zapmail` in the current directory.
+  </Step>
+</Steps>
+
+## Running the server
+
+<CodeGroup>
+  ```bash Development
+  # Run directly with Go
+  go run main.go
+  ```
+  
+  ```bash Production
+  # Run the compiled binary
+  ./zapmail
+  ```
+  
+  ```bash With custom environment variables
+  # Override environment variables at runtime
+  PORT=2525 SUPABASE_CONN_STRING="postgresql://..." ./zapmail
+  ```
+</CodeGroup>
+
+When the server starts successfully, you'll see:
+
+```
+Temporary Mail Service SMTP Server listening on port 2525
+```
+
+## Database setup
+
+The backend requires a PostgreSQL database with the following table schema:
+
+```sql
+CREATE TABLE emails (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(255) NOT NULL,
+  recipient VARCHAR(255) NOT NULL,
+  raw_data TEXT NOT NULL,
+  received_at TIMESTAMP NOT NULL
+);
+```
+
+<Warning>
+  Ensure your database is created and the `emails` table exists before starting the server. The application will fail to start if it cannot connect to the database.
+</Warning>
+
+## Server features
+
+### SMTP command support
+
+The server implements the following SMTP commands (backend/main.go:92-159):
+
+- `HELO` / `EHLO` - Initiate connection
+- `MAIL FROM` - Specify sender
+- `RCPT TO` - Specify recipient
+- `DATA` - Send email content
+- `QUIT` - Close connection
+- `NOOP` - No operation
+- `VRFY` - Verify address (returns not supported)
+- `EXPN` - Expand mailing list (returns not supported)
+- `HELP` - Display supported commands
+
+### Automatic cleanup
+
+The server runs an automatic cleanup job every hour that deletes emails older than 7 days (backend/main.go:196-208):
+
+```go
+func startCleanupJob(db *sql.DB) {
+    ticker := time.NewTicker(1 * time.Hour)
+    go func() {
+        for range ticker.C {
+            _, err := db.Exec(`DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`)
+            if err != nil {
+                log.Println("Error cleaning up old emails:", err)
+            } else {
+                log.Println("Cleanup job: Old emails removed.")
+            }
+        }
+    }()
+}
+```
+
+## Testing the SMTP server
+
+You can test the server using telnet:
+
+```bash
+telnet localhost 2525
+```
+
+Example SMTP session:
+
+```
+HELO example.com
+MAIL FROM:<sender@example.com>
+RCPT TO:<user@yourdomain.com>
+DATA
+Subject: Test Email
+
+This is a test email.
+.
+QUIT
+```
+
+## Deployment options
+
+<CodeGroup>
+  ```bash Systemd service
+  # Create a systemd service file
+  sudo nano /etc/systemd/system/zapmail.service
+  
+  [Unit]
+  Description=Zapmail SMTP Server
+  After=network.target
+  
+  [Service]
+  Type=simple
+  User=zapmail
+  WorkingDirectory=/opt/zapmail
+  Environment="PORT=2525"
+  Environment="SUPABASE_CONN_STRING=postgresql://..."
+  ExecStart=/opt/zapmail/zapmail
+  Restart=on-failure
+  
+  [Install]
+  WantedBy=multi-user.target
+  ```
+  
+  ```bash Docker
+  # Create a Dockerfile in the backend directory
+  FROM golang:1.23.6-alpine AS builder
+  WORKDIR /app
+  COPY go.mod go.sum ./
+  RUN go mod download
+  COPY . .
+  RUN go build -o zapmail main.go
+  
+  FROM alpine:latest
+  WORKDIR /app
+  COPY --from=builder /app/zapmail .
+  EXPOSE 2525
+  CMD ["./zapmail"]
+  ```
+  
+  ```bash Railway
+  # Use railway.json or configure in dashboard
+  {
+    "build": {
+      "builder": "NIXPACKS",
+      "buildCommand": "go build -o zapmail main.go"
+    },
+    "deploy": {
+      "startCommand": "./zapmail",
+      "restartPolicyType": "ON_FAILURE"
+    }
+  }
+  ```
+</CodeGroup>
+
+## Troubleshooting
+
+### Connection refused
+
+If you can't connect to the SMTP server:
+
+- Verify the `PORT` environment variable is set correctly
+- Check firewall rules allow incoming connections on the specified port
+- Ensure the server is running and listening
+
+### Database connection errors
+
+If you see database connection errors:
+
+- Verify `SUPABASE_CONN_STRING` is correct
+- Test the connection string directly with `psql`
+- Check database credentials and network access
+- Ensure the `emails` table exists
+
+<Note>
+  The server will log "No .env file found" if no `.env` file exists, but will continue if environment variables are set through other means (e.g., system environment variables).
+</Note>
+
+## Next steps
+
+<Card title="Frontend setup" icon="browser" href="/deployment/frontend-setup">
+  Deploy the Next.js web interface to complete your Zapmail installation
+</Card>

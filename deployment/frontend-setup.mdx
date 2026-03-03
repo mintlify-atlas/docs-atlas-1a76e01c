@@ -1,0 +1,331 @@
+---
+title: Frontend setup
+description: Deploy the Next.js web interface for Zapmail
+---
+
+The Zapmail frontend is a Next.js 15 application that provides a user-friendly interface for managing temporary email addresses and viewing received emails.
+
+## Prerequisites
+
+Before deploying the frontend, ensure you have:
+
+- Node.js 20 or later installed
+- npm, pnpm, or yarn package manager
+- Access to the PostgreSQL database configured for the backend
+- Git installed for cloning the repository
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Zapmail repository and navigate to the UI directory:
+    
+    ```bash
+    git clone https://github.com/yourusername/zapmail.git
+    cd zapmail/ui
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    Install the required npm packages:
+    
+    <CodeGroup>
+      ```bash npm
+      npm install
+      ```
+      
+      ```bash pnpm
+      pnpm install
+      ```
+      
+      ```bash yarn
+      yarn install
+      ```
+    </CodeGroup>
+    
+    Key dependencies include:
+    - Next.js 15.1.11
+    - React 19.0.0
+    - PostgreSQL client (pg)
+    - Mailparser for email parsing
+    - Tailwind CSS for styling
+    - Radix UI components
+    - Framer Motion for animations
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Create a `.env.local` file in the UI directory:
+    
+    ```bash
+    touch .env.local
+    ```
+    
+    Add the required environment variables:
+    
+    ```bash
+    DATABASE_URL=postgresql://user:password@host:port/database
+    ```
+    
+    <Note>
+      The `DATABASE_URL` should point to the same PostgreSQL database used by the backend.
+    </Note>
+  </Step>
+  
+  <Step title="Build the application">
+    Create an optimized production build:
+    
+    <CodeGroup>
+      ```bash npm
+      npm run build
+      ```
+      
+      ```bash pnpm
+      pnpm build
+      ```
+      
+      ```bash yarn
+      yarn build
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Development server
+
+To run the development server with Turbopack:
+
+<CodeGroup>
+  ```bash npm
+  npm run dev
+  ```
+  
+  ```bash pnpm
+  pnpm dev
+  ```
+  
+  ```bash yarn
+  yarn dev
+  ```
+</CodeGroup>
+
+The application will be available at `http://localhost:3000`.
+
+## Production deployment
+
+### Running locally
+
+After building, start the production server:
+
+<CodeGroup>
+  ```bash npm
+  npm start
+  ```
+  
+  ```bash pnpm
+  pnpm start
+  ```
+  
+  ```bash yarn
+  yarn start
+  ```
+</CodeGroup>
+
+### Deploy to Vercel
+
+Vercel is the recommended platform for deploying Next.js applications:
+
+<Steps>
+  <Step title="Install Vercel CLI">
+    ```bash
+    npm i -g vercel
+    ```
+  </Step>
+  
+  <Step title="Login to Vercel">
+    ```bash
+    vercel login
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    From the `ui` directory:
+    
+    ```bash
+    vercel
+    ```
+    
+    Follow the prompts to configure your deployment.
+  </Step>
+  
+  <Step title="Set environment variables">
+    In the Vercel dashboard, navigate to your project settings and add:
+    
+    - `DATABASE_URL`: Your PostgreSQL connection string
+  </Step>
+  
+  <Step title="Deploy to production">
+    ```bash
+    vercel --prod
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Make sure to add your `DATABASE_URL` environment variable in the Vercel dashboard before deploying to production.
+</Warning>
+
+### Deploy to Railway
+
+Railway provides simple deployment with automatic GitHub integration:
+
+<Steps>
+  <Step title="Connect repository">
+    In Railway dashboard, create a new project and connect your GitHub repository.
+  </Step>
+  
+  <Step title="Configure build settings">
+    Railway will auto-detect Next.js. Ensure the root directory is set to `ui`.
+  </Step>
+  
+  <Step title="Set environment variables">
+    Add `DATABASE_URL` in the Railway dashboard.
+  </Step>
+  
+  <Step title="Deploy">
+    Railway will automatically build and deploy on git push.
+  </Step>
+</Steps>
+
+### Deploy to other platforms
+
+<CodeGroup>
+  ```dockerfile Docker
+  FROM node:20-alpine AS deps
+  WORKDIR /app
+  COPY package.json pnpm-lock.yaml ./
+  RUN npm install -g pnpm && pnpm install --frozen-lockfile
+  
+  FROM node:20-alpine AS builder
+  WORKDIR /app
+  COPY --from=deps /app/node_modules ./node_modules
+  COPY . .
+  ENV NEXT_TELEMETRY_DISABLED 1
+  RUN npm install -g pnpm && pnpm build
+  
+  FROM node:20-alpine AS runner
+  WORKDIR /app
+  ENV NODE_ENV production
+  ENV NEXT_TELEMETRY_DISABLED 1
+  
+  COPY --from=builder /app/public ./public
+  COPY --from=builder /app/.next/standalone ./
+  COPY --from=builder /app/.next/static ./.next/static
+  
+  EXPOSE 3000
+  ENV PORT 3000
+  
+  CMD ["node", "server.js"]
+  ```
+  
+  ```yaml Docker Compose
+  version: '3.8'
+  services:
+    zapmail-ui:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      ports:
+        - "3000:3000"
+      environment:
+        - DATABASE_URL=${DATABASE_URL}
+      restart: unless-stopped
+  ```
+</CodeGroup>
+
+## Database connection
+
+The frontend connects to PostgreSQL using the `pg` library (ui/src/lib/db.ts:1-6):
+
+```typescript
+import { Pool } from "pg";
+
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+```
+
+This connection pool is used throughout the application to query emails from the database.
+
+## Next.js configuration
+
+The application uses a minimal Next.js configuration (ui/next.config.ts:1-10):
+
+```typescript
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  images: {
+    domains: ["upload.wikimedia.org"],
+  },
+};
+
+export default nextConfig;
+```
+
+## Available scripts
+
+The following scripts are available in `package.json`:
+
+- `dev` - Start development server with Turbopack
+- `build` - Create production build
+- `start` - Start production server
+- `lint` - Run ESLint for code quality
+
+## Features
+
+The Zapmail frontend includes:
+
+- **Temporary email generation**: Create disposable email addresses
+- **Inbox management**: View and manage received emails
+- **Email parsing**: Parse and display HTML/plain text emails using mailparser
+- **Responsive design**: Mobile-friendly interface with Tailwind CSS
+- **Real-time updates**: Check for new emails automatically
+- **Animated UI**: Smooth animations with Framer Motion
+
+## Troubleshooting
+
+### Build errors
+
+If you encounter build errors:
+
+- Clear the Next.js cache: `rm -rf .next`
+- Delete `node_modules` and reinstall: `rm -rf node_modules && npm install`
+- Ensure you're using Node.js 20 or later
+
+### Database connection errors
+
+If the frontend can't connect to the database:
+
+- Verify `DATABASE_URL` is set correctly in `.env.local`
+- Test the connection string with `psql`
+- Ensure the database allows connections from your deployment platform
+- Check that the `emails` table exists
+
+### Environment variables not loading
+
+Next.js environment variables:
+
+- Use `.env.local` for local development
+- Prefix client-side variables with `NEXT_PUBLIC_`
+- Server-side variables (like `DATABASE_URL`) don't need a prefix
+- Restart the development server after changing environment variables
+
+<Note>
+  The `DATABASE_URL` is only used server-side and will never be exposed to the client.
+</Note>
+
+## Next steps
+
+<Card title="Configuration" icon="gear" href="/deployment/configuration">
+  Learn about all available environment variables and configuration options
+</Card>

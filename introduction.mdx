@@ -1,0 +1,108 @@
+---
+title: Welcome to Zapmail
+description: A lightweight, secure temporary email service that protects your privacy
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="Zapmail Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="Zapmail Hero Dark"
+/>
+
+## What is Zapmail?
+
+Zapmail is a disposable temporary email service that protects your real email address from spam, advertising mailings, and malware. It's anonymous, free, and requires no registration.
+
+Built with a custom SMTP server written in Go and a modern Next.js interface, Zapmail provides a reliable, secure, and efficient way to receive emails without compromising your privacy.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get your first temporary email in under 30 seconds
+  </Card>
+  <Card
+    title="FAQ"
+    icon="circle-question"
+    href="/support/faq"
+  >
+    Common questions about temporary email and privacy
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/reference/api-actions"
+  >
+    Integrate Zapmail into your applications
+  </Card>
+  <Card
+    title="Security"
+    icon="shield-halved"
+    href="/features/privacy-security"
+  >
+    Learn how we protect your privacy and data
+  </Card>
+</CardGroup>
+
+## Key features
+
+<AccordionGroup>
+  <Accordion title="No registration required" icon="user-slash">
+    Start using temporary emails instantly without creating an account. Just choose a username and you're ready to go.
+  </Accordion>
+
+  <Accordion title="7-day retention" icon="clock">
+    All emails are automatically deleted after 7 days to ensure your privacy and prevent data accumulation.
+  </Accordion>
+
+  <Accordion title="Anonymous and secure" icon="lock">
+    Your temporary email address keeps your real identity hidden. We don't track or store personal information.
+  </Accordion>
+
+  <Accordion title="Real-time inbox" icon="inbox">
+    Receive emails instantly with our custom SMTP server built in Go for maximum performance and reliability.
+  </Accordion>
+
+  <Accordion title="Clean interface" icon="sparkles">
+    Modern, intuitive design built with Next.js makes managing temporary emails effortless.
+  </Accordion>
+
+  <Accordion title="Free forever" icon="gift">
+    Zapmail is completely free to use with no hidden costs or premium tiers.
+  </Accordion>
+</AccordionGroup>
+
+## Common use cases
+
+Zapmail is perfect for situations where you need an email address but want to protect your privacy:
+
+- **Forum registrations** - Sign up for forums and discussion boards without exposing your real email
+- **One-time verifications** - Verify accounts on websites you'll only use once
+- **Free trial signups** - Access free trials without getting added to marketing lists
+- **Wi-Fi access** - Register for public Wi-Fi that requires an email address
+- **Download gated content** - Access whitepapers, ebooks, or resources that require email registration
+- **Testing** - Developers can test email functionality without setting up complex infrastructure
+
+<Note>
+  While Zapmail works with most services, some platforms actively block temporary email domains. For critical accounts, we recommend using a permanent email address.
+</Note>
+
+## How it works
+
+Zapmail operates on a simple yet powerful architecture:
+
+1. **Custom SMTP server** - Built from scratch in Go, our SMTP server handles incoming emails efficiently
+2. **PostgreSQL database** - Emails are stored securely in Supabase with automatic cleanup
+3. **Next.js interface** - A modern web application provides instant access to your inbox
+4. **Automatic deletion** - A cleanup job runs every hour to remove emails older than 7 days
+
+<Tip>
+  Ready to protect your privacy? Head over to our [quickstart guide](/quickstart) to create your first temporary email address.
+</Tip>

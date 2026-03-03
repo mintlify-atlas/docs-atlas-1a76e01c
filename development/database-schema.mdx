@@ -1,0 +1,368 @@
+---
+title: Database schema
+description: PostgreSQL database structure and email storage in Zapmail
+---
+
+Zapmail uses PostgreSQL (hosted on Supabase) to store email data. The database schema is designed to be simple and efficient, storing raw email data along with metadata for quick retrieval.
+
+## Database connection
+
+The system uses two different connection methods for the Go backend and Next.js frontend:
+
+### Go backend connection
+
+```go
+// From backend/main.go:172-183
+func connectDB() *sql.DB {
+	connStr := os.Getenv("SUPABASE_CONN_STRING")
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal("Error connecting to DB:", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatal("Cannot ping DB:", err)
+	}
+	return db
+}
+```
+
+### Next.js frontend connection
+
+```typescript
+// From ui/src/lib/db.ts:1-5
+import { Pool } from "pg";
+
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+```
+
+<Tip>
+The frontend uses a connection pool to efficiently manage multiple database queries from server actions.
+</Tip>
+
+## Emails table
+
+The `emails` table is the core of Zapmail's data storage:
+
+### Schema structure
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `INTEGER` (auto-increment) | Primary key, auto-generated |
+| `username` | `TEXT` | Extracted username from recipient (e.g., "user" from "user@zapmail.parth.lol") |
+| `recipient` | `TEXT` | Full recipient email address with angle brackets (e.g., `<user@zapmail.parth.lol>`) |
+| `raw_data` | `TEXT` | Complete raw email including headers and body |
+| `received_at` | `TIMESTAMP` | When the email was received by the SMTP server |
+
+<Note>
+The table doesn't have explicit indexes defined in the code, but PostgreSQL automatically creates an index on the primary key `id`.
+</Note>
+
+### Example data
+
+```sql
+SELECT * FROM emails LIMIT 1;
+```
+
+| id | username | recipient | raw_data | received_at |
+|----|----------|-----------|----------|-------------|
+| 1 | john | `<john@zapmail.parth.lol>` | From: sender@example.com... | 2026-03-03 14:30:22 |
+
+## Database operations
+
+### Inserting emails
+
+Emails are inserted by the Go SMTP server when it receives new messages:
+
+```go
+// From backend/main.go:185-193
+func storeEmail(db *sql.DB, email Email) error {
+	query := `
+        INSERT INTO emails (username, recipient, raw_data, received_at)
+        VALUES ($1, $2, $3, $4)
+    `
+	_, err := db.Exec(query, email.Username, email.Recipient, email.RawData, email.ReceivedAt)
+	return err
+}
+```
+
+**What gets stored:**
+- `username`: Extracted from recipient address using `extractUsername()` function
+- `recipient`: Full email address from RCPT TO command
+- `raw_data`: Complete email content from DATA command
+- `received_at`: Current timestamp from `time.Now()`
+
+<Expandable title="Example email insertion">
+```go
+emailRecord := Email{
+	Username:   "john",
+	Recipient:  "<john@zapmail.parth.lol>",
+	RawData:    "From: sender@example.com\nTo: john@zapmail.parth.lol\nSubject: Test\n\nHello!",
+	ReceivedAt: time.Now(),
+}
+storeEmail(db, emailRecord)
+```
+</Expandable>
+
+### Querying emails
+
+The frontend queries emails using the `searchEmails()` server action:
+
+```typescript
+// From ui/src/app/actions/actions.ts:6-20
+export async function searchEmails(rcptQuery: string) {
+  try {
+    console.log("Searching for emails with query:", rcptQuery);
+    
+    // Format the search query to match the database format with angle brackets
+    const formattedQuery = `<${rcptQuery}@zapmail.parth.lol>`;
+    console.log("Formatted query:", formattedQuery);
+    
+    const result = await db.query(
+      `SELECT id, username as mail_from, recipient as rcpt_to, raw_data as data, received_at as date 
+       FROM emails 
+       WHERE recipient = $1
+       ORDER BY received_at DESC`,
+      [formattedQuery]
+    );
+    // ... parsing and return logic
+  }
+}
+```
+
+**Query features:**
+- Uses parameterized queries (`$1`) to prevent SQL injection
+- Formats the query with angle brackets to match stored format
+- Orders by `received_at DESC` to show newest emails first
+- Renames columns for frontend convenience (`username as mail_from`)
+
+<Note>
+The query uses exact match on `recipient` field. Consider adding an index on this column for better performance with large datasets.
+</Note>
+
+### Email parsing
+
+After retrieving raw email data, it's parsed into a structured format:
+
+```typescript
+// From ui/src/app/actions/actions.ts:24-41
+const output = [];
+for (const i of result.rows) {
+  console.log("Processing row:", i);
+  try {
+    const parsedEmail = await parseEmail(i.data);
+    console.log("Parsed email:", parsedEmail);
+    output.push({
+      id: i.id,
+      date: i.date,
+      mail_from: i.mail_from,
+      rcpt_to: i.rcpt_to,
+      data: parsedEmail,
+    });
+  } catch (parseError) {
+    console.error("Error parsing email:", parseError);
+    // Continue with next email if one fails to parse
+  }
+}
+```
+
+### Email parser implementation
+
+The `parseEmail` function uses the `mailparser` library to convert raw email text into structured data:
+
+```typescript
+// From ui/src/hooks/emailParser.ts:13-30
+export async function parseEmail(data: string): Promise<EmailContent> {
+  try {
+    const parsed = await simpleParser(data);
+
+    return {
+      subject: parsed.subject ?? "",
+      from: parsed.from?.text ?? "",
+      text: parsed.text ?? "",
+      html: parsed.html || "",
+      text_as_html: parsed.textAsHtml ?? "",
+      attachments: parsed.attachments ?? [],
+      date: parsed.date ?? new Date(),
+    };
+  } catch (error) {
+    console.error("Error parsing email", error);
+    throw error;
+  }
+}
+```
+
+**Parsed email interface:**
+```typescript
+export interface EmailContent {
+  subject: string;
+  from: string;
+  text: string;
+  html: string;
+  text_as_html: string;
+  attachments: Attachment[];
+  date: Date;
+}
+```
+
+<Tip>
+The parser gracefully handles missing fields by using the nullish coalescing operator (`??`) to provide default values.
+</Tip>
+
+### Deleting old emails
+
+The SMTP server automatically deletes emails older than 7 days:
+
+```go
+// From backend/main.go:195-208
+func startCleanupJob(db *sql.DB) {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			_, err := db.Exec(`DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`)
+			if err != nil {
+				log.Println("Error cleaning up old emails:", err)
+			} else {
+				log.Println("Cleanup job: Old emails removed.")
+			}
+		}
+	}()
+}
+```
+
+**Cleanup characteristics:**
+- Runs every hour using `time.NewTicker(1 * time.Hour)`
+- Deletes emails where `received_at` is more than 7 days old
+- Uses PostgreSQL's `INTERVAL` for date arithmetic
+- Logs results for monitoring
+
+## Data flow diagram
+
+```
+┌─────────────────────────┐
+│   SMTP Server (Go)      │
+│                         │
+│  extractUsername()      │
+│  storeEmail()           │
+└──────────┬──────────────┘
+           │
+           │ INSERT
+           ▼
+┌─────────────────────────────────────┐
+│        PostgreSQL (Supabase)        │
+│                                     │
+│  ┌───────────────────────────────┐  │
+│  │  emails table                 │  │
+│  │  - id (auto-increment)        │  │
+│  │  - username                   │  │
+│  │  - recipient                  │  │
+│  │  - raw_data                   │  │
+│  │  - received_at                │  │
+│  └───────────────────────────────┘  │
+└──────────┬──────────────────────────┘
+           │
+           │ SELECT
+           ▼
+┌─────────────────────────┐
+│  Next.js Frontend       │
+│                         │
+│  searchEmails()         │
+│  parseEmail()           │
+└─────────────────────────┘
+```
+
+## Environment variables
+
+**SMTP Server:**
+```bash
+SUPABASE_CONN_STRING=postgresql://user:password@host:port/database
+```
+
+**Next.js Frontend:**
+```bash
+DATABASE_URL=postgresql://user:password@host:port/database
+```
+
+<Note>
+Both connection strings point to the same PostgreSQL database but use different variable names for clarity in each application.
+</Note>
+
+## Performance considerations
+
+### Indexing recommendations
+
+While not currently implemented, consider adding these indexes for better performance:
+
+```sql
+-- Index on recipient for faster email lookups
+CREATE INDEX idx_emails_recipient ON emails(recipient);
+
+-- Index on received_at for faster cleanup queries
+CREATE INDEX idx_emails_received_at ON emails(received_at);
+
+-- Composite index for common query pattern
+CREATE INDEX idx_emails_recipient_received_at ON emails(recipient, received_at DESC);
+```
+
+### Query optimization
+
+The current query is simple and efficient:
+
+```sql
+SELECT id, username as mail_from, recipient as rcpt_to, 
+       raw_data as data, received_at as date 
+FROM emails 
+WHERE recipient = $1
+ORDER BY received_at DESC
+```
+
+<Tip>
+With an index on `(recipient, received_at DESC)`, this query can use an index-only scan for optimal performance.
+</Tip>
+
+### Storage considerations
+
+- **Raw email storage**: Emails are stored as complete raw text, including headers
+- **No compression**: Consider adding compression for `raw_data` if storage becomes a concern
+- **Automatic cleanup**: 7-day retention prevents unlimited database growth
+- **No attachments table**: Attachments are stored within the raw email data
+
+## Error handling
+
+### Insert errors
+
+```go
+if err := storeEmail(db, emailRecord); err != nil {
+	log.Println("Error storing email:", err)
+	writer.WriteString("550 Error storing email\r\n")
+}
+```
+
+### Query errors
+
+```typescript
+try {
+  const result = await db.query(...);
+  // Process results
+} catch (error) {
+  console.error("Error fetching emails", error);
+  throw new Error("Error fetching emails");
+}
+```
+
+### Parse errors
+
+```typescript
+try {
+  const parsedEmail = await parseEmail(i.data);
+  output.push({...});
+} catch (parseError) {
+  console.error("Error parsing email:", parseError);
+  // Continue with next email if one fails to parse
+}
+```
+
+<Note>
+The system continues processing other emails even if one email fails to parse, ensuring resilience.
+</Note>

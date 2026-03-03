@@ -1,0 +1,232 @@
+---
+title: System architecture
+description: Overview of Zapmail's architecture, components, and data flow
+---
+
+Zapmail is built with a custom SMTP server in Go and a Next.js frontend, using PostgreSQL for email storage. This architecture enables a lightweight, efficient temporary email service.
+
+## System components
+
+The system consists of three main components:
+
+1. **SMTP server (Go)** - Receives and processes incoming emails
+2. **Frontend (Next.js)** - Provides the user interface for viewing emails
+3. **Database (PostgreSQL)** - Stores email data via Supabase
+
+<Note>
+The SMTP server runs independently from the frontend, allowing it to receive emails 24/7 regardless of frontend activity.
+</Note>
+
+## Architecture diagram
+
+```
+┌─────────────────┐
+│  Email Sender   │
+└────────┬────────┘
+         │ SMTP Protocol
+         ▼
+┌─────────────────────────────┐
+│   Go SMTP Server            │
+│                             │
+│  - Port listener            │
+│  - Connection handler       │
+│  - SMTP command parser      │
+│  - Email extractor          │
+└──────────┬──────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  PostgreSQL (Supabase)      │
+│                             │
+│  - emails table             │
+│  - Automatic cleanup        │
+└──────────┬──────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  Next.js Frontend           │
+│                             │
+│  - Email search             │
+│  - Email parsing            │
+│  - UI display               │
+└─────────────────────────────┘
+```
+
+## Data flow
+
+### Email receiving flow
+
+1. External email client connects to the SMTP server
+2. Server sends greeting: `220 Welcome to Temporary Mail Service`
+3. Client and server exchange SMTP commands (HELO, MAIL FROM, RCPT TO, DATA)
+4. Server extracts recipient username from the email address
+5. Server stores the raw email data in the PostgreSQL database
+6. Server responds with `250 OK: Message accepted`
+
+<Expandable title="View detailed SMTP flow">
+```
+Client → Server: HELO client.example.com
+Server → Client: 250 Hello
+
+Client → Server: MAIL FROM:<sender@example.com>
+Server → Client: 250 Sender OK
+
+Client → Server: RCPT TO:<user@zapmail.parth.lol>
+Server → Client: 250 Recipient OK
+
+Client → Server: DATA
+Server → Client: 354 End data with <CR><LF>.<CR><LF>
+
+Client → Server: [Email headers and body]
+Client → Server: .
+Server → Client: 250 OK: Message accepted
+```
+</Expandable>
+
+### Email retrieval flow
+
+1. User enters a username in the frontend
+2. Frontend calls `searchEmails()` server action
+3. Server action queries the database for matching recipient addresses
+4. Raw email data is parsed using the `mailparser` library
+5. Parsed emails are returned and displayed in the UI
+
+```typescript
+// From ui/src/app/actions/actions.ts:14-20
+const result = await db.query(
+  `SELECT id, username as mail_from, recipient as rcpt_to, raw_data as data, received_at as date 
+   FROM emails 
+   WHERE recipient = $1
+   ORDER BY received_at DESC`,
+  [formattedQuery]
+);
+```
+
+## Component interactions
+
+### SMTP server initialization
+
+The SMTP server initializes with the following steps:
+
+```go
+// From backend/main.go:35-61
+func main() {
+	db := connectDB()
+	// Start the cleanup job to purge emails older than 7 days.
+	go startCleanupJob(db)
+	port := os.Getenv("PORT")
+	if port == "" {
+		log.Fatal("PORT environment variable not set")
+	}
+
+	// Start listening for incoming SMTP 
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal("Error starting server:", err)
+	}
+	log.Println("Temporary Mail Service SMTP Server listening on port "+port)
+
+	// Accept connections in an infinite loop
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println("Error accepting connection:", err)
+			continue
+		}
+		go handleConnection(conn, db)
+	}
+}
+```
+
+<Tip>
+The server uses goroutines to handle multiple SMTP connections concurrently, allowing it to process many emails simultaneously.
+</Tip>
+
+### Database connection
+
+Both the Go backend and Next.js frontend connect to the same PostgreSQL database:
+
+**Go backend:**
+```go
+// From backend/main.go:172-183
+func connectDB() *sql.DB {
+	connStr := os.Getenv("SUPABASE_CONN_STRING")
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal("Error connecting to DB:", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatal("Cannot ping DB:", err)
+	}
+	return db
+}
+```
+
+**Next.js frontend:**
+```typescript
+// From ui/src/lib/db.ts:1-5
+import { Pool } from "pg";
+
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+```
+
+## Background processes
+
+### Email cleanup job
+
+The SMTP server runs a background cleanup job that automatically deletes emails older than 7 days:
+
+```go
+// From backend/main.go:195-208
+func startCleanupJob(db *sql.DB) {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			_, err := db.Exec(`DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`)
+			if err != nil {
+				log.Println("Error cleaning up old emails:", err)
+			} else {
+				log.Println("Cleanup job: Old emails removed.")
+			}
+		}
+	}();
+}
+```
+
+<Note>
+The cleanup job runs every hour to maintain a clean database and ensure user privacy.
+</Note>
+
+## Technology stack
+
+| Component | Technology | Purpose |
+|-----------|------------|----------|
+| SMTP Server | Go | High-performance email receiving |
+| Frontend | Next.js 14 (App Router) | User interface and server actions |
+| Database | PostgreSQL (Supabase) | Email storage and retrieval |
+| Email Parsing | mailparser (Node.js) | Converting raw email to structured data |
+| Connection Pool | pg (Node.js) | Database connection management |
+
+## Environment variables
+
+The system requires the following environment variables:
+
+**SMTP Server (Go):**
+- `PORT` - The port for the SMTP server to listen on
+- `SUPABASE_CONN_STRING` - PostgreSQL connection string
+
+**Frontend (Next.js):**
+- `DATABASE_URL` - PostgreSQL connection string
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="SMTP server" href="/development/smtp-server" icon="server">
+    Deep dive into the Go SMTP implementation
+  </Card>
+  <Card title="Database schema" href="/development/database-schema" icon="database">
+    Explore the database structure and queries
+  </Card>
+</CardGroup>

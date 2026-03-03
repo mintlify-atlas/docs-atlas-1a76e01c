@@ -1,0 +1,144 @@
+---
+title: 'Frequently asked questions'
+description: 'Common questions about using Zapmail temporary email service'
+---
+
+## General questions
+
+<AccordionGroup>
+  <Accordion title="How long are emails stored?">
+    Emails are automatically stored for **7 days** from the time they are received. After this period, they are permanently deleted by the automated cleanup job that runs hourly.
+    
+    <Note>
+      The cleanup job removes all emails where `received_at < NOW() - INTERVAL '7 days'` from the database. This ensures your temporary emails don't persist indefinitely.
+    </Note>
+    
+    If you need to keep important information from a temporary email, make sure to save it elsewhere before the 7-day retention period expires.
+  </Accordion>
+
+  <Accordion title="Is Zapmail secure and private?">
+    Zapmail provides temporary email addresses for short-term use. Here's what you should know about security:
+    
+    **What Zapmail does:**
+    - Stores emails in an encrypted PostgreSQL database (Supabase)
+    - Automatically purges emails after 7 days
+    - Uses secure SMTP protocol for receiving messages
+    - Processes all connections in isolated goroutines
+    
+    **What Zapmail doesn't provide:**
+    - End-to-end encryption for email contents
+    - Authentication or password protection for addresses
+    - Permanent email storage
+    
+    <Warning>
+      Anyone who knows your temporary email address can view emails sent to it. Never use temporary email addresses for sensitive communications like banking, medical records, or confidential business.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Can I reply to emails I receive?">
+    No, Zapmail is a **receive-only** email service. You cannot send or reply to emails from your temporary address.
+    
+    The SMTP server in `backend/main.go:38-62` is configured to accept incoming connections only. If you need to reply to a sender, you'll need to use a different email service.
+    
+    <Tip>
+      Zapmail is designed for situations where you need to receive verification emails, newsletters, or one-time communications without exposing your personal email address.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="How do I get a temporary email address?">
+    Getting a temporary email address with Zapmail is simple:
+    
+    1. Visit the Zapmail homepage
+    2. Click the "Generate Email" button
+    3. Your temporary address will be created instantly (format: `username@yourdomain.com`)
+    4. Copy the address to use wherever you need it
+    5. Return to Zapmail to check your inbox
+    
+    No registration, login, or personal information required. The address is ready to receive emails immediately.
+  </Accordion>
+
+  <Accordion title="How many emails can I receive?">
+    There is no hard limit on the number of emails you can receive at a single temporary address. The SMTP server (`backend/main.go:65-160`) processes each incoming email and stores it in the database.
+    
+    However, all emails are subject to the 7-day retention policy. The system is designed for temporary, short-term email needs rather than high-volume or long-term storage.
+  </Accordion>
+
+  <Accordion title="Can I use custom usernames?">
+    This depends on your Zapmail deployment configuration. The backend extracts the username from the recipient address using the format before the `@` symbol (`backend/main.go:163-170`).
+    
+    Check with your instance administrator to see if custom usernames are supported, or if addresses are randomly generated.
+  </Accordion>
+
+  <Accordion title="What email formats are supported?">
+    Zapmail accepts standard email formats including:
+    
+    - Plain text emails
+    - HTML emails
+    - Emails with attachments
+    - Multi-part MIME messages
+    
+    The server stores the complete raw email data (`backend/main.go:131-143`), which is then parsed and displayed in the web interface.
+  </Accordion>
+
+  <Accordion title="How often does the inbox refresh?">
+    The Next.js frontend typically polls for new emails at regular intervals. Check your browser's network tab to see the refresh rate, or manually refresh the page to check for new messages.
+    
+    Emails are stored in the database immediately upon receipt by the SMTP server, so there's no delay on the backend.
+  </Accordion>
+</AccordionGroup>
+
+## Technical questions
+
+<AccordionGroup>
+  <Accordion title="What SMTP commands does Zapmail support?">
+    Zapmail implements the core SMTP protocol with the following commands:
+    
+    | Command | Description | Response Code |
+    |---------|-------------|---------------|
+    | `HELO` / `EHLO` | Initiate connection | 250 Hello |
+    | `MAIL FROM` | Specify sender address | 250 Sender OK |
+    | `RCPT TO` | Specify recipient address | 250 Recipient OK |
+    | `DATA` | Begin message transmission | 354 End data with &lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt; |
+    | `QUIT` | Close connection | 221 Bye |
+    | `NOOP` | No operation | 250 OK |
+    | `HELP` | List supported commands | 214 Commands supported |
+    | `VRFY` | Verify address (not supported) | 250 VRFY not supported |
+    | `EXPN` | Expand mailing list (not supported) | 250 EXPN not supported |
+    
+    <Note>
+      See `backend/main.go:92-159` for the complete command implementation.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Which port does the SMTP server use?">
+    The SMTP server port is configured via the `PORT` environment variable (`backend/main.go:40-43`). Common configurations:
+    
+    - Port 2525 (common for development)
+    - Port 25 (standard SMTP, may require root privileges)
+    - Port 587 (submission port)
+    
+    Check your deployment's environment configuration to see which port is in use.
+  </Accordion>
+
+  <Accordion title="How does the cleanup job work?">
+    The cleanup job is a background goroutine that starts when the SMTP server launches (`backend/main.go:196-208`).
+    
+    **Cleanup process:**
+    1. Runs every hour (configurable via `time.NewTicker(1 * time.Hour)`)
+    2. Executes SQL: `DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`
+    3. Logs the result of each cleanup operation
+    
+    This ensures the database doesn't grow indefinitely and maintains the temporary nature of the service.
+  </Accordion>
+
+  <Accordion title="What database does Zapmail use?">
+    Zapmail uses PostgreSQL via Supabase, configured through the `SUPABASE_CONN_STRING` environment variable (`backend/main.go:173-183`).
+    
+    The database schema includes an `emails` table with columns:
+    - `id` - Primary key
+    - `username` - Extracted from recipient address
+    - `recipient` - Full recipient email address
+    - `raw_data` - Complete email content
+    - `received_at` - Timestamp of when email was received
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,211 @@
+---
+title: Privacy and security
+description: Data retention policies, automatic cleanup, and privacy features
+---
+
+Zapmail is designed with privacy in mind. This page explains how your data is handled, stored, and automatically deleted.
+
+## Data retention policy
+
+Zapmail automatically deletes all emails after 7 days. This policy ensures:
+
+- **Privacy protection** - Temporary data doesn't persist indefinitely
+- **Storage efficiency** - The database remains performant
+- **Security** - Reduced risk of data breaches for old emails
+
+<Warning>
+  Emails are permanently deleted after 7 days with no possibility of recovery. Save any important information before the retention period expires.
+</Warning>
+
+## Automatic cleanup process
+
+### How it works
+
+The Go backend runs an automatic cleanup job that:
+
+<Steps>
+  <Step title="Runs every hour">
+    A background process wakes up every 60 minutes to check for expired emails.
+  </Step>
+
+  <Step title="Identifies old emails">
+    The cleanup job queries the database for all emails where:
+    ```sql
+    received_at < NOW() - INTERVAL '7 days'
+    ```
+  </Step>
+
+  <Step title="Deletes expired emails">
+    All matching emails are permanently removed from the database in a single operation.
+  </Step>
+
+  <Step title="Logs completion">
+    The server logs "Cleanup job: Old emails removed" to confirm successful deletion.
+  </Step>
+</Steps>
+
+<Info>
+  The cleanup job runs continuously in the background as a goroutine, independent of email reception and user activity.
+</Info>
+
+### Retention calculation
+
+The 7-day period is calculated from the `received_at` timestamp:
+
+- **Day 0** - Email arrives and is stored with current timestamp
+- **Days 1-6** - Email remains accessible in your inbox
+- **Day 7+** - Email is eligible for deletion at the next hourly cleanup
+
+Actual deletion occurs during the next scheduled cleanup run after the 7-day mark.
+
+## What data is stored
+
+Zapmail stores minimal information for each email:
+
+<Accordion title="Database fields">
+  | Field | Description | Example |
+  |-------|-------------|----------|
+  | `id` | Auto-incrementing unique identifier | 12345 |
+  | `username` | Extracted from recipient address | john |
+  | `recipient` | Full recipient address | `<john@zapmail.parth.lol>` |
+  | `raw_data` | Complete raw email content | (MIME-encoded email) |
+  | `received_at` | Server timestamp when email arrived | 2026-03-03 14:32:01 |
+</Accordion>
+
+<Info>
+  The `raw_data` field contains the entire email as received by the SMTP server, including headers, body, and any attachments. This is parsed on-demand when you view emails.
+</Info>
+
+## What is NOT stored
+
+Zapmail does not collect or store:
+
+- User accounts or passwords
+- IP addresses of inbox viewers
+- Session cookies or tracking data
+- Analytics about email viewing behavior
+- Backup copies of deleted emails
+
+<Note>
+  There is no user authentication system. The username in the URL is the only identifier used to retrieve emails.
+</Note>
+
+## Privacy considerations
+
+### No authentication
+
+Zapmail addresses are not password-protected:
+
+- Anyone who knows a username can view emails sent to `username@zapmail.parth.lol`
+- There's no way to "claim" or "lock" a username
+- Previously used usernames may be reused by others after emails expire
+
+<Warning>
+  Never use Zapmail for sensitive communications like password resets, financial information, or personal data. Treat all Zapmail addresses as publicly accessible.
+</Warning>
+
+### Address reuse
+
+Because there's no registration:
+
+1. You create a temporary address by simply entering a username
+2. After 7 days, all emails to that address are deleted
+3. Someone else could use the same username and receive new emails
+4. They won't see your old emails (which are permanently deleted)
+
+<Info>
+  For better privacy, use random or unique usernames rather than common names or predictable patterns.
+</Info>
+
+## Database security
+
+Emails are stored in a PostgreSQL database (Supabase):
+
+- **Encrypted connections** - Communication with the database uses SSL/TLS
+- **Managed infrastructure** - Supabase handles database security patches and updates
+- **No backups** - Deleted emails are not recoverable from backups
+
+### Connection security
+
+The Go backend connects to the database using:
+- Environment variable for connection string (not hardcoded)
+- PostgreSQL's native connection pooling
+- Standard SQL parameterized queries (prevents SQL injection)
+
+## SMTP security
+
+The custom SMTP server:
+
+<Accordion title="Security features">
+  - Validates SMTP command syntax
+  - Logs all connection attempts
+  - Handles connection errors gracefully
+  - Prevents buffer overflow with line-by-line reading
+  - Limits data collection to standard SMTP terminator (single period)
+</Accordion>
+
+<Accordion title="Security limitations">
+  - No TLS/SSL encryption for incoming SMTP connections
+  - No sender authentication (accepts mail from anyone)
+  - No SPF/DKIM verification
+  - No spam filtering or malware scanning
+</Accordion>
+
+<Warning>
+  The SMTP server accepts emails from any sender without verification. Be cautious when opening emails from unknown sources, especially those containing links or attachments.
+</Warning>
+
+## Receiving-only service
+
+Zapmail is designed exclusively for receiving emails:
+
+- You cannot send emails from a Zapmail address
+- The SMTP server only accepts incoming mail (port 25/2525)
+- There's no outbound SMTP functionality
+
+This limitation prevents:
+- Spam abuse from Zapmail addresses
+- Email spoofing or phishing attacks originating from the service
+- Relay attacks using Zapmail as an intermediary
+
+## Best practices
+
+To use Zapmail safely:
+
+<Steps>
+  <Step title="Use for non-sensitive purposes">
+    Only use Zapmail for:
+    - Testing email functionality
+    - Disposable signups for services you don't trust
+    - Avoiding newsletter spam on your primary email
+  </Step>
+
+  <Step title="Choose unique usernames">
+    Use random or hard-to-guess usernames rather than common names to reduce the chance of someone else accessing your emails.
+  </Step>
+
+  <Step title="Act within 7 days">
+    Retrieve any needed verification codes or information before the automatic deletion occurs.
+  </Step>
+
+  <Step title="Don't share sensitive data">
+    Never use Zapmail for:
+    - Banking or financial services
+    - Medical information
+    - Legal documents
+    - Password resets for important accounts
+  </Step>
+</Steps>
+
+## Permanent deletion
+
+When emails are deleted:
+
+1. They are removed from the database using `DELETE FROM emails`
+2. The database transaction commits immediately
+3. There are no soft deletes or archive tables
+4. Recovery is impossible
+
+<Info>
+  If you need to keep information from a Zapmail email, copy it elsewhere before the 7-day retention period expires.
+</Info>

@@ -1,0 +1,383 @@
+---
+title: SMTP server implementation
+description: Deep dive into Zapmail's custom Go SMTP server
+---
+
+Zapmail's SMTP server is a custom implementation written in Go that handles incoming email connections and stores them in PostgreSQL. The server implements the core SMTP protocol commands needed for receiving emails.
+
+## Server initialization
+
+The SMTP server starts by connecting to the database and listening for incoming TCP connections:
+
+```go
+// From backend/main.go:35-61
+func main() {
+	db := connectDB()
+	// Start the cleanup job to purge emails older than 7 days.
+	go startCleanupJob(db)
+	port := os.Getenv("PORT")
+	if port == "" {
+		log.Fatal("PORT environment variable not set")
+	}
+
+	// Start listening for incoming SMTP 
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal("Error starting server:", err)
+	}
+	log.Println("Temporary Mail Service SMTP Server listening on port "+port)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println("Error accepting connection:", err)
+			continue
+		}
+		go handleConnection(conn, db)
+	}
+}
+```
+
+<Note>
+Each incoming connection is handled in a separate goroutine, allowing the server to process multiple emails concurrently.
+</Note>
+
+## Email struct
+
+The `Email` struct represents an email record in the system:
+
+```go
+// From backend/main.go:20-26
+type Email struct {
+	ID         int      
+	Username   string    
+	Recipient  string   
+	RawData    string    
+	ReceivedAt time.Time 
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ID` | `int` | Auto-generated database ID |
+| `Username` | `string` | Extracted username from recipient (before @) |
+| `Recipient` | `string` | Full recipient email address |
+| `RawData` | `string` | Complete raw email content including headers |
+| `ReceivedAt` | `time.Time` | Timestamp when the email was received |
+
+## Connection handling
+
+The `handleConnection` function manages the SMTP conversation with the client:
+
+```go
+// From backend/main.go:65-72
+func handleConnection(conn net.Conn, db *sql.DB) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	writer.WriteString("220 Welcome to Temporary Mail Service\r\n")
+	writer.Flush()
+
+	var rcptTo string 
+	// ... command processing loop
+}
+```
+
+<Tip>
+The server uses `bufio.Reader` and `bufio.Writer` for efficient reading and writing of SMTP protocol messages.
+</Tip>
+
+### Command processing loop
+
+The server continuously reads and processes SMTP commands until the client disconnects or sends QUIT:
+
+```go
+// From backend/main.go:76-90
+for {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		if err == io.EOF {
+			log.Println("Client disconnected")
+		} else {
+			log.Println("Error reading command:", err)
+		}
+		return
+	}
+
+	input := strings.ToUpper(strings.TrimSpace(line))
+	log.Printf("Received: %s", input)
+	// ... switch statement for command handling
+}
+```
+
+## SMTP commands
+
+The server implements the following SMTP commands:
+
+### HELO / EHLO
+
+Initiates the SMTP conversation:
+
+```go
+// From backend/main.go:103-104
+case strings.HasPrefix(input, "HELO") || strings.HasPrefix(input, "EHLO"):
+	writer.WriteString("250 Hello\r\n")
+```
+
+### MAIL FROM
+
+Specifies the sender's email address:
+
+```go
+// From backend/main.go:105-106
+case strings.HasPrefix(input, "MAIL FROM:"):
+	writer.WriteString("250 Sender OK\r\n")
+```
+
+<Note>
+The server accepts all senders without validation since it's designed for receiving emails to any address.
+</Note>
+
+### RCPT TO
+
+Specifies the recipient's email address and stores it for later processing:
+
+```go
+// From backend/main.go:107-110
+case strings.HasPrefix(input, "RCPT TO:"):
+	// Save the recipient address for later extraction.
+	rcptTo = strings.TrimSpace(line[len("RCPT TO:"):])
+	writer.WriteString("250 Recipient OK\r\n")
+```
+
+### DATA
+
+Receives the actual email content:
+
+```go
+// From backend/main.go:111-150
+case input == "DATA":
+	writer.WriteString("354 End data with <CR><LF>.<CR><LF>\r\n")
+	writer.Flush()
+
+	var dataLines []string
+	for {
+		dataLine, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Println("Error reading email data:", err)
+			return
+		}
+		if strings.TrimSpace(dataLine) == "." {
+			break
+		}
+		dataLines = append(dataLines, dataLine)
+	}
+	rawEmail := strings.Join(dataLines, "")
+	log.Println("Received raw email data:")
+	log.Println(rawEmail)
+
+	username := extractUsername(rcptTo)
+	
+	emailRecord := Email{
+		Username:   username,
+		Recipient:  rcptTo,
+		RawData:    rawEmail,
+		ReceivedAt: time.Now(),
+	}
+	// Store the email in the database.
+	if err := storeEmail(db, emailRecord); err != nil {
+		log.Println("Error storing email:", err)
+		writer.WriteString("550 Error storing email\r\n")
+	} else {
+		writer.WriteString("250 OK: Message accepted\r\n")
+	}
+```
+
+<Expandable title="How DATA command works">
+The DATA command follows this flow:
+
+1. Server sends `354` response to indicate readiness
+2. Client sends email headers and body, line by line
+3. Client sends a line containing only a period (`.`) to signal end
+4. Server extracts the username from recipient
+5. Server creates an Email struct with the data
+6. Server stores the email in the database
+7. Server responds with success or error message
+</Expandable>
+
+### QUIT
+
+Ends the SMTP session:
+
+```go
+// From backend/main.go:151-154
+case input == "QUIT":
+	writer.WriteString("221 Bye\r\n")
+	writer.Flush()
+	return
+```
+
+### Utility commands
+
+The server also supports these informational commands:
+
+```go
+// From backend/main.go:94-102
+case input == "VRFY":
+	writer.WriteString("250 VRFY not supported\r\n")
+case input == "NOOP":
+	writer.WriteString("250 OK\r\n")
+case input == "EXPN":
+	writer.WriteString("250 EXPN not supported\r\n")
+case input == "HELP":
+	writer.WriteString("214-Commands supported:\r\n")
+	writer.WriteString("214 HELO, EHLO, MAIL FROM, RCPT TO, DATA, NOOP, VRFY, HELP, EXPN, QUIT\r\n")
+```
+
+## Username extraction
+
+The server extracts the username from the recipient email address:
+
+```go
+// From backend/main.go:162-170
+func extractUsername(rcpt string) string {
+	rcpt = strings.Trim(rcpt, "<>")
+	parts := strings.Split(rcpt, "@")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0]
+}
+```
+
+This function:
+1. Removes angle brackets from the email address
+2. Splits the address at the `@` symbol
+3. Returns the username portion (before the `@`)
+
+## Email storage
+
+Emails are stored in the database using a simple INSERT query:
+
+```go
+// From backend/main.go:185-193
+func storeEmail(db *sql.DB, email Email) error {
+	query := `
+        INSERT INTO emails (username, recipient, raw_data, received_at)
+        VALUES ($1, $2, $3, $4)
+    `
+	_, err := db.Exec(query, email.Username, email.Recipient, email.RawData, email.ReceivedAt)
+	return err
+}
+```
+
+<Note>
+The `ID` field is auto-generated by PostgreSQL and doesn't need to be specified in the INSERT statement.
+</Note>
+
+## Automatic cleanup
+
+The server runs a background job to delete old emails every hour:
+
+```go
+// From backend/main.go:195-208
+func startCleanupJob(db *sql.DB) {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			_, err := db.Exec(`DELETE FROM emails WHERE received_at < NOW() - INTERVAL '7 days'`)
+			if err != nil {
+				log.Println("Error cleaning up old emails:", err)
+			} else {
+				log.Println("Cleanup job: Old emails removed.")
+			}
+		}
+	}()
+}
+```
+
+This ensures:
+- User privacy by automatically deleting old emails
+- Database efficiency by preventing unlimited growth
+- Compliance with temporary email service expectations
+
+<Tip>
+You can adjust the cleanup frequency and retention period by modifying the `time.NewTicker` interval and the SQL `INTERVAL` value.
+</Tip>
+
+## Error handling
+
+The server handles errors at multiple levels:
+
+**Connection errors:**
+```go
+if err != nil {
+	log.Println("Error accepting connection:", err)
+	continue  // Continue accepting other connections
+}
+```
+
+**Reading errors:**
+```go
+if err != nil {
+	if err == io.EOF {
+		log.Println("Client disconnected")
+	} else {
+		log.Println("Error reading command:", err)
+	}
+	return  // Close this connection
+}
+```
+
+**Storage errors:**
+```go
+if err := storeEmail(db, emailRecord); err != nil {
+	log.Println("Error storing email:", err)
+	writer.WriteString("550 Error storing email\r\n")
+} else {
+	writer.WriteString("250 OK: Message accepted\r\n")
+}
+```
+
+## Dependencies
+
+The SMTP server uses these Go packages:
+
+```go
+import (
+	"bufio"
+	"database/sql"
+	"io"
+	"log"
+	"net"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq" 
+)
+```
+
+| Package | Purpose |
+|---------|----------|
+| `bufio` | Buffered I/O for efficient reading/writing |
+| `database/sql` | Database interface |
+| `net` | TCP networking |
+| `github.com/joho/godotenv` | Load environment variables from .env |
+| `github.com/lib/pq` | PostgreSQL driver |
+
+## Performance characteristics
+
+- **Concurrent connections**: Each connection runs in its own goroutine
+- **Memory efficiency**: Uses buffered I/O to minimize allocations
+- **Database pooling**: Reuses database connections across goroutines
+- **Non-blocking**: Main listener never blocks, even if a connection fails
+
+<Tip>
+Go's lightweight goroutines allow the server to handle thousands of concurrent SMTP connections with minimal overhead.
+</Tip>

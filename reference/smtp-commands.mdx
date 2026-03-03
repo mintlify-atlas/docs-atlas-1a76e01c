@@ -1,0 +1,163 @@
+---
+title: SMTP commands
+description: SMTP protocol commands supported by the Zapmail server
+---
+
+The Zapmail SMTP server implements standard SMTP protocol commands for receiving email messages.
+
+## Supported commands
+
+### HELO
+
+Initiates an SMTP session with the server.
+
+**Syntax:** `HELO <domain>`
+
+**Response:** `250 Hello`
+
+**Example:**
+```
+HELO example.com
+250 Hello
+```
+
+### EHLO
+
+Extended SMTP greeting command. Functions identically to HELO in the current implementation.
+
+**Syntax:** `EHLO <domain>`
+
+**Response:** `250 Hello`
+
+**Example:**
+```
+EHLO example.com
+250 Hello
+```
+
+### MAIL FROM
+
+Specifies the sender's email address for the message.
+
+**Syntax:** `MAIL FROM:<sender@example.com>`
+
+**Response:** `250 Sender OK`
+
+**Example:**
+```
+MAIL FROM:<sender@example.com>
+250 Sender OK
+```
+
+### RCPT TO
+
+Specifies the recipient's email address. The server extracts the username portion and stores it for the email record.
+
+**Syntax:** `RCPT TO:<recipient@zapmail.parth.lol>`
+
+**Response:** `250 Recipient OK`
+
+**Example:**
+```
+RCPT TO:<user@zapmail.parth.lol>
+250 Recipient OK
+```
+
+### DATA
+
+Initiates the message data transfer. The server accepts all lines until a line containing only a period (`.`) is received.
+
+**Syntax:** `DATA`
+
+**Response:** `354 End data with <CR><LF>.<CR><LF>`
+
+After data is received:
+- Success: `250 OK: Message accepted`
+- Error: `550 Error storing email`
+
+**Example:**
+```
+DATA
+354 End data with <CR><LF>.<CR><LF>
+Subject: Test Email
+From: sender@example.com
+To: user@zapmail.parth.lol
+
+This is the message body.
+.
+250 OK: Message accepted
+```
+
+### QUIT
+
+Closes the SMTP session and disconnects.
+
+**Syntax:** `QUIT`
+
+**Response:** `221 Bye`
+
+**Example:**
+```
+QUIT
+221 Bye
+```
+
+### NOOP
+
+No operation command. The server acknowledges but performs no action.
+
+**Syntax:** `NOOP`
+
+**Response:** `250 OK`
+
+**Example:**
+```
+NOOP
+250 OK
+```
+
+### VRFY
+
+Verify command. Not supported by the Zapmail server.
+
+**Syntax:** `VRFY`
+
+**Response:** `250 VRFY not supported`
+
+### EXPN
+
+Expand command. Not supported by the Zapmail server.
+
+**Syntax:** `EXPN`
+
+**Response:** `250 EXPN not supported`
+
+### HELP
+
+Displays a list of supported commands.
+
+**Syntax:** `HELP`
+
+**Response:**
+```
+214-Commands supported:
+214 HELO, EHLO, MAIL FROM, RCPT TO, DATA, NOOP, VRFY, HELP, EXPN, QUIT
+```
+
+## Implementation details
+
+The SMTP command handler is implemented in backend/main.go:92-158. Commands are case-insensitive and processed in a continuous loop until the client issues QUIT or disconnects.
+
+### Greeting message
+
+When a client connects, the server sends:
+```
+220 Welcome to Temporary Mail Service
+```
+
+### Unrecognized commands
+
+Any command not listed above will receive:
+```
+500 Unrecognized command
+```

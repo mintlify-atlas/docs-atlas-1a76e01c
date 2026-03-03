@@ -1,0 +1,148 @@
+---
+title: Email viewing
+description: Navigate your inbox and view emails in the web interface
+---
+
+Zapmail provides a clean, intuitive interface for viewing your temporary emails. This page covers how to access your inbox, browse emails, and view individual messages.
+
+## Accessing your inbox
+
+To view emails for a temporary address:
+
+<Steps>
+  <Step title="Enter your username">
+    Navigate to the mail page and enter the username portion of your temporary email address (without `@zapmail.parth.lol`).
+  </Step>
+
+  <Step title="View your inbox">
+    Your inbox displays at `/user?q=username` and shows all emails sent to `username@zapmail.parth.lol`.
+  </Step>
+</Steps>
+
+<Info>
+  You don't need to create an account or register. Simply enter any username to check for emails sent to that address.
+</Info>
+
+## Inbox interface
+
+The inbox displays your emails in a card-based layout with the following elements:
+
+### Header
+
+- **Back button** - Returns to the mail search page
+- **Email address** - Shows the full temporary address you're viewing (`username@zapmail.parth.lol`)
+
+### Email list
+
+Emails appear as preview cards showing:
+
+- **Subject line** - The email's subject (clickable to open full email)
+- **Preview text** - A snippet of the email body
+- **Date** - When the email was received
+
+Emails are sorted with the newest messages at the top, making it easy to find recent emails.
+
+<Note>
+  The inbox auto-scrolls if you have more emails than fit on the screen. A custom scrollbar appears on the right side of the email list.
+</Note>
+
+## Viewing individual emails
+
+Click on any email preview to view the full message.
+
+### Email detail view
+
+The email viewer displays:
+
+<Accordion title="Email metadata">
+  - **Subject** - Shown in the header bar at the top
+  - **Date** - When the email was received (formatted as a readable date)
+  - **From** - The sender's email address and name
+  - **To** - Your temporary email address
+</Accordion>
+
+<Accordion title="Email content">
+  The email body is rendered using the HTML version when available, preserving:
+  - Text formatting (bold, italic, colors)
+  - Images and embedded media
+  - Links and buttons
+  - Tables and layout
+  
+  The content area is scrollable for long emails.
+</Accordion>
+
+### Navigation
+
+From the email detail view:
+
+- Click the **Back button** to return to your inbox
+- The back button maintains your username in the URL, keeping you in the same inbox
+
+## Empty inbox state
+
+If no emails have been sent to your temporary address, you'll see:
+
+```
+No emails found
+```
+
+This indicates:
+- The username is valid and can receive emails
+- No one has sent emails to this address yet
+- Previous emails may have been deleted (after 7 days)
+
+<Warning>
+  If you're expecting an email that doesn't appear, check that the sender used the exact address including `@zapmail.parth.lol`. Some services may block or filter temporary email addresses.
+</Warning>
+
+## Email address format
+
+All Zapmail addresses follow the pattern:
+
+```
+username@zapmail.parth.lol
+```
+
+- **username** - Any alphanumeric string you choose (no registration required)
+- **@zapmail.parth.lol** - The fixed domain for all Zapmail addresses
+
+<Info>
+  There's no authentication or password protection. Anyone who knows a username can view emails sent to that address. Use Zapmail only for non-sensitive purposes.
+</Info>
+
+## Loading states
+
+The interface provides visual feedback during data loading:
+
+### Initial load
+
+When you first access an inbox:
+```
+Loading...
+```
+
+This indicates the application is:
+1. Querying the database for emails
+2. Parsing raw email data
+3. Preparing the inbox view
+
+### Email fetch
+
+When opening a specific email, you'll briefly see a loading state while the email data is retrieved and parsed.
+
+## Browser compatibility
+
+The email viewer works in all modern browsers:
+- Chrome/Edge (latest 2 versions)
+- Firefox (latest 2 versions)
+- Safari (latest 2 versions)
+
+JavaScript must be enabled for the interface to function.
+
+## Mobile support
+
+The inbox interface is responsive and works on mobile devices. The layout adapts to smaller screens while maintaining readability and usability.
+
+<Note>
+  On mobile devices, long email addresses may wrap to multiple lines in the header. The full address is always visible.
+</Note>
